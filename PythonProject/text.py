@@ -1,16 +1,27 @@
 import google.generativeai as genai
 import streamlit as st
 from textblob import TextBlob
+import requests
+
+API_URL = "https://api-inference.huggingface.co/models/vennify/t5-base-grammar-correction"
+HEADERS = {"Authorization": "Bearer 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"}
 
 genai.configure(api_key="AIzaSyDNHUYg0Y3NcESwCzJnaZsmvThlBXUiEo4")
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-st.title("Enter your interest")
-interest = st.text_input("Enter your topic of interest:", placeholder="Type something here...")
+st.title("Enter your text")
+text = st.text_area(label="", placeholder="Type something here...")
+
+def grammar_corrector(text):
+    payload = {"inputs": "grammar: " + text}
+    response = requests.post(API_URL, headers=HEADERS, json=payload)
+    if response.status_code == 200:
+        return response.json()[0]["generated_text"]
+    else:
+        return "Error: Unable to process request."
 
 def cefr_check(text):
         blob = TextBlob(text)
-
         sentence_count = len(blob.sentences)
         word_count = len(blob.words)
         avg_sentence_length = word_count / sentence_count if sentence_count else 0
@@ -106,17 +117,22 @@ def cefr_generator(cefr, text):
     return model.generate_content(f"generate a short paragraph that's the exact same as provided next, but MUST be in {cefr} CEFR level: {text}")._result.candidates[0].content.parts[0].text
 
 if st.button("Submit"):
-    if interest:
-        if model.generate_content(f"reply with only either Yes or No without any additional spaces or punctuations, is this considered something that expresses an interest ?: {interest}")._result.candidates[0].content.parts[0].text == "Yes\n":
-            articles = {"A1": "", "A2": "", "B1": "", "B2": "", "C1": "", "C2": ""}
-            article = model.generate_content(f"write a short add simple A1 article about anything related to {interest}")._result.candidates[0].content.parts[0].text
-            cfr_of_article = cefr_check(article)["level"]
-            articles[cfr_of_article] = article
-            for i in articles:
-                if articles[i] == "": articles[i] = cefr_generator(i, article)
+    if text:
+        articles = {"A1": "", "A2": "", "B1": "", "B2": "", "C1": "", "C2": ""}
+        cfr_of_article = cefr_check(text)["level"]
+        articles[cfr_of_article] = text
+        st.write(f"Your CEFR level is: {cefr_check(text)["level"]}")
+        st.write(f"The score of your text: {cefr_check(text)["score"]}")
+        st.write(f"Your polarity: {round(cefr_check(text)["polarity"]*100, 2)}%")
+        st.write(f"Your subjectivity: {round(cefr_check(text)["subjectivity"]*100, 2)}%")
+        if grammar_corrector(text) and len(grammar_corrector(text)) <= 80 and grammar_corrector(text) != "Error: Unable to process request." and text.strip() != grammar_corrector(text).strip() :
+            st.write(f"*Grammar Issues Found:* ✅\n*Corrected Text:* {grammar_corrector(text)}")
+        else:
+            st.write("✅ No grammar errors detected!")
+        for i in articles:
+            if articles[i] == "": articles[i] = cefr_generator(i, text)
+            if i != cfr_of_article:
                 st.title(f"The article in {i}")
                 st.write(articles[i])
-        else:
-            st.write("please enter a valid expression of interest.")
     else:
         st.error("Please enter a topic before submitting.")
